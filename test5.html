@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Model Farm Vision</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f0f0f0;
+            color: #333;
+            text-align: center;
+            padding: 20px;
+        }
+        h1 {
+            color: #2c6c2f;
+        }
+        input[type="file"], button {
+            margin: 20px 0;
+        }
+        #uploadedImage {
+            border: 2px solid #2c6c2f;
+            border-radius: 5px;
+            margin-top: 10px;
+        }
+        #webcam-container {
+            display: none;
+            margin-top: 20px;
+        }
+        #label-container {
+            margin-top: 20px;
+        }
+        .label {
+            font-size: 12px;
+            color: white;
+            background-color: #4a9a5b;
+            display: inline-block;
+            padding: 5px 10px;
+            border-radius: 3px;
+            margin: 5px;
+        }
+        #result {
+            font-size: 24px;
+            font-weight: bold;
+            padding: 20px;
+            border-radius: 5px;
+            color: white;
+            margin-top: 20px;
+        }
+        .good {
+            background-color: #4a9a5b;
+        }
+        .bad {
+            background-color: #c72c2c;
+        }
+    </style>
+</head>
+<body>
+    <h1>AI Model Farm Vision</h1>
+    <input type="file" id="imageUpload" accept="image/*">
+    <button id="snapPhoto">Snap a Photo</button>
+    <br><br>
+    <img id="uploadedImage" width="200" style="display:none;">
+    <div id="webcam-container">
+        <video id="webcam" width="200" autoplay></video>
+        <canvas id="webcamCanvas" width="200" style="display:none;"></canvas>
+    </div>
+    <div id="label-container"></div>
+    <div id="result"></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
+    <script>
+        const URL = "https://teachablemachine.withgoogle.com/models/_J-QmGaOP/";
+        let model, labelContainer, maxPredictions;
+
+        async function init() {
+            const modelURL = URL + "model.json";
+            const metadataURL = URL + "metadata.json";
+
+            model = await tmImage.load(modelURL, metadataURL);
+            maxPredictions = model.getTotalClasses();
+
+            labelContainer = document.getElementById("label-container");
+            for (let i = 0; i < maxPredictions; i++) {
+                const div = document.createElement("div");
+                div.classList.add("label");
+                div.id = "label-" + i;
+                labelContainer.appendChild(div);
+            }
+        }
+
+        init();
+
+        document.getElementById('imageUpload').addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = async function(event) {
+                    const imgElement = document.getElementById('uploadedImage');
+                    imgElement.src = event.target.result;
+                    imgElement.style.display = 'block';
+                    
+                    imgElement.onload = async function() {
+                        const prediction = await model.predict(imgElement);
+                        displayPrediction(prediction);
+                    };
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+
+        document.getElementById('snapPhoto').addEventListener('click', async () => {
+            const video = document.getElementById('webcam');
+            const canvas = document.getElementById('webcamCanvas');
+            const context = canvas.getContext('2d');
+
+            // Initialize webcam
+            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+            video.srcObject = stream;
+            video.play();
+
+            video.onloadedmetadata = () => {
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+            };
+
+            video.onplay = () => {
+                // Draw the video frame to the canvas
+                context.drawImage(video, 0, 0, canvas.width, canvas.height);
+                const imgElement = new Image();
+                imgElement.src = canvas.toDataURL();
+                imgElement.onload = async function() {
+                    const prediction = await model.predict(imgElement);
+                    displayPrediction(prediction);
+                    video.pause();
+                    stream.getTracks().forEach(track => track.stop());
+                };
+            };
+        });
+
+        function displayPrediction(predictions) {
+            predictions.forEach((prediction, index) => {
+                const labelElement = document.getElementById("label-" + index);
+                if (labelElement) {
+                    labelElement.innerHTML = `${prediction.className}: ${prediction.probability.toFixed(2)}`;
+                }
+            });
+
+            const badPrediction = predictions.find(pred => pred.className === 'Bad');
+            const goodPrediction = predictions.find(pred => pred.className === 'Good');
+
+            if (badPrediction && goodPrediction) {
+                if (badPrediction.probability > goodPrediction.probability) {
+                    document.getElementById('result').innerText = 'Bad';
+                    document.getElementById('result').className = 'bad';
+                } else {
+                    document.getElementById('result').innerText = 'Good';
+                    document.getElementById('result').className = 'good';
+                }
+            } else {
+                document.getElementById('result').innerText = 'Unable to determine result';
+                document.getElementById('result').className = '';
+            }
+        }
+    </script>
+</body>
+</html>
